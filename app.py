@@ -3,34 +3,65 @@ import pandas as pd
 from pandasai import SmartDataframe
 from pandasai.llm import OpenAI
 
-# 1. App Configuration
+# 1. App Configuration (Must be the first command)
 st.set_page_config(page_title="Device Pricing AI", page_icon="📱", layout="wide")
+
+# ==========================================
+# --- THE NEW SECURITY GATE ---
+# ==========================================
+# Initialize the login state if it doesn't exist yet
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# If the user is NOT logged in, show the login screen
+if not st.session_state.authenticated:
+    st.title("🔒 Secure Portal Access")
+    st.write("Please verify your identity to access secondary device pricing data.")
+    
+    user_email = st.text_input("Enter your company email address:")
+    
+    if st.button("Access Dashboard"):
+        # Fetch the secret list of emails we saved in Step 1
+        allowed_list = st.secrets.get("allowed_emails", [])
+        
+        if user_email.lower().strip() in [email.lower() for email in allowed_list]:
+            st.session_state.authenticated = True
+            st.rerun() # Refresh the page to load the actual app
+        else:
+            st.error("Access Denied. Your email is not authorized to view this data.")
+            
+    # The st.stop() command is the actual lock. It prevents any code below 
+    # from running until the authentication above is successful.
+    st.stop() 
+# ==========================================
+
+
+# 2. The Main App (Only runs if authenticated)
 st.title("📱 Secondary Device Pricing Dashboard")
 st.markdown("Upload your formatted purchase history and ask questions in plain English.")
 
-# 2. Secure API Key Input (So you don't expose your key in the code)
 api_key = st.sidebar.text_input("Enter your OpenAI API Key", type="password")
 st.sidebar.markdown("*Your key is secure and resets when the page refreshes.*")
 
-# 3. File Uploader
+# Add a logout button to the sidebar
+if st.sidebar.button("Logout"):
+    st.session_state.authenticated = False
+    st.rerun()
+
 uploaded_file = st.file_uploader("Upload your Excel or CSV file", type=['csv', 'xlsx'])
 
 if uploaded_file is not None and api_key:
-    # Read the data
     if uploaded_file.name.endswith('.csv'):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_excel(uploaded_file)
         
     st.write("### 📊 Data Preview")
-    st.dataframe(df.head(5)) # Shows the first 5 rows so users know it loaded
+    st.dataframe(df.head(5))
 
-    # 4. Initialize the AI
     llm = OpenAI(api_token=api_key)
-    # Convert standard dataframe to a PandasAI "Smart" Dataframe
     smart_df = SmartDataframe(df, config={"llm": llm, "enable_cache": False})
 
-    # 5. The Natural Language Search Bar
     st.write("### 🤖 Ask the AI")
     user_query = st.text_input("Example: 'Show me a line chart of the average buy price for Grade B iPhones by date'")
     
@@ -38,14 +69,11 @@ if uploaded_file is not None and api_key:
         if user_query:
             with st.spinner("Analyzing data and generating chart..."):
                 try:
-                    # The AI processes the question and generates an answer or chart
                     response = smart_df.chat(user_query)
-                    
-                    # Display the result (text or image)
                     if isinstance(response, str) and response.endswith(('.png', '.jpg', '.jpeg')):
-                        st.image(response) # If it's a saved chart image
+                        st.image(response)
                     else:
-                        st.write(response) # If it's text or a number
+                        st.write(response)
                 except Exception as e:
                     st.error(f"An error occurred: {e}. Try rephrasing your question.")
         else:
